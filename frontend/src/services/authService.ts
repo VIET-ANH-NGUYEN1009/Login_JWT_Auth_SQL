@@ -6,22 +6,22 @@ export const authService = {
     password: string,
     email: string,
     firstName: string,
-    lastName: string
+    lastName: string,
   ) => {
     const res = await api.post(
       "/auth/signup",
       { username, password, email, firstName, lastName },
-      { withCredentials: true }
+      { withCredentials: true },
     );
 
     return res.data;
   },
 
-  signIn: async (username: string, password: string) => {
+  signIn: async (Username: string, Password: string) => {
     const res = await api.post(
       "auth/signin",
-      { username, password },
-      { withCredentials: true }
+      { Username, Password },
+      { withCredentials: true },
     );
     return res.data; // access token
   },

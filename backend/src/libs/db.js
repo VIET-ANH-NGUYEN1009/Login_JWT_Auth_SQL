@@ -9,7 +9,6 @@ const pool = new Pool({
   port: process.env.DB_PORT || 5432,
   ssl: false, // true nếu deploy cloud
 });
-console.log(pool);
 
 export const connectDB = async () => {
   try {

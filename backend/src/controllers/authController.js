@@ -48,61 +48,59 @@ export const signUp = async (req, res) => {
 };
 
 // =================== SIGN IN ===================
+
 export const signIn = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { username, password } = req.body;
+    const { Username, Password } = req.body;
 
-    if (!username || !password) {
+    if (!Username || !Password) {
       return res.status(400).json({ message: "Thiếu username hoặc password" });
     }
 
     const result = await client.query(
-      `SELECT * FROM "Users" WHERE username = $1`,
-      [username],
+      `SELECT * FROM "UserInfor" WHERE "Username" = $1`,
+      [Username],
     );
 
     const user = result.rows[0];
-    if (!user) {
-      return res
-        .status(401)
-        .json({ message: "Username hoặc password không chính xác" });
+    if (!user || user.Password !== Password) {
+      return res.status(401).json({
+        message: "Username hoặc password không chính xác",
+      });
     }
 
-    const passwordCorrect = await bcrypt.compare(password, user.hashedPassword);
-
-    if (!passwordCorrect) {
-      return res
-        .status(401)
-        .json({ message: "Username hoặc password không chính xác" });
-    }
-
+    // Tạo access token
     const accessToken = jwt.sign(
-      { userId: user.id },
+      { username: user.Username },
       process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: ACCESS_TOKEN_TTL },
+      { expiresIn: "15m" },
     );
 
+    // Tạo refresh token
     const refreshToken = crypto.randomBytes(64).toString("hex");
-    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+    // Update refresh token (KHÔNG ON CONFLICT)
     await client.query(
       `
-      INSERT INTO "Sessions" ("userId", "refreshToken", "expiresAt")
-      VALUES ($1, $2, $3)
+      UPDATE "UserInfor"
+      SET "refreshToken" = $2,
+          "expiresAt" = $3
+      WHERE "Username" = $1
       `,
-      [user.id, refreshToken, expiresAt],
+      [user.Username, refreshToken, expiresAt],
     );
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: true, // đổi false khi test local http
-      sameSite: "none", // đổi "lax" khi test local
-      maxAge: REFRESH_TOKEN_TTL,
+      secure: false, // localhost
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return res.status(200).json({
-      message: `User ${user.displayName} đã đăng nhập`,
+      message: `User ${user.Username} đã đăng nhập`,
       accessToken,
     });
   } catch (error) {
@@ -120,9 +118,13 @@ export const signOut = async (req, res) => {
     const token = req.cookies?.refreshToken;
 
     if (token) {
-      await client.query(`DELETE FROM "Sessions" WHERE "refreshToken" = $1`, [
-        token,
-      ]);
+      await client.query(
+        `UPDATE "UserInfor"
+SET "refreshToken" = NULL,
+    "expiresAt" = NULL
+WHERE "refreshToken" = $1;`,
+        [token],
+      );
       res.clearCookie("refreshToken");
     }
 
@@ -145,7 +147,7 @@ export const refreshToken = async (req, res) => {
     }
 
     const result = await client.query(
-      `SELECT * FROM "Sessions" WHERE "refreshToken" = $1`,
+      `SELECT * FROM "UserInfor" WHERE "refreshToken" = $1`,
       [token],
     );
 
@@ -161,7 +163,7 @@ export const refreshToken = async (req, res) => {
     }
 
     const accessToken = jwt.sign(
-      { userId: session.userId },
+      { username: session.Username },
       process.env.ACCESS_TOKEN_SECRET,
       { expiresIn: ACCESS_TOKEN_TTL },
     );

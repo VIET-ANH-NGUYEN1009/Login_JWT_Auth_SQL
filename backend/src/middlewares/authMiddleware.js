@@ -1,54 +1,30 @@
-// @ts-nocheck
 import jwt from "jsonwebtoken";
-import sql from "mssql";
+import pool from "../libs/db.js";
 
-export const protectedRoute = (req, res, next) => {
+export const protectedRoute = async (req, res, next) => {
   try {
     const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1]; // Bearer <token>
+    const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
-      return res.status(401).json({ message: "Không tìm thấy access token" });
+      return res.status(401).json({ message: "Không có access token" });
     }
 
-    jwt.verify(
-      token,
-      process.env.ACCESS_TOKEN_SECRET,
-      async (err, decodedUser) => {
-        if (err) {
-          console.error(err);
-          return res
-            .status(403)
-            .json({ message: "Access token hết hạn hoặc không đúng" });
-        }
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
-        try {
-          // Query SQL Server để tìm user theo id
-          const result = await sql.query`
-          SELECT id, email, username 
-          FROM Users 
-          WHERE id = ${decodedUser.userId}
-        `;
-
-          const user = result.recordset[0];
-
-          if (!user) {
-            return res
-              .status(404)
-              .json({ message: "Người dùng không tồn tại." });
-          }
-
-          // gắn user vào req
-          req.user = user;
-          next();
-        } catch (dbErr) {
-          console.error("Lỗi khi truy vấn SQL:", dbErr);
-          return res.status(500).json({ message: "Lỗi hệ thống" });
-        }
-      },
+    const result = await pool.query(
+      `SELECT "Username" FROM "UserInfor" WHERE "Username" = $1`,
+      [decoded.username],
     );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "User không tồn tại" });
+    }
+
+    req.user = decoded;
+    next();
   } catch (error) {
-    console.error("Lỗi khi xác minh JWT trong authMiddleware", error);
-    return res.status(500).json({ message: "Lỗi hệ thống" });
+    console.error("❌ authMiddleware:", error);
+    return res.status(403).json({ message: "Token không hợp lệ" });
   }
 };
